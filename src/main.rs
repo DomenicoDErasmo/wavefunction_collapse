@@ -142,7 +142,25 @@ fn init(input_path: &str) -> Generation {
     Generation {ruleset, frequencies, num_tiles}
 }
 
+#[derive(Clone, Default)]
+struct TileState {
+    tile: Option<Tile>,
+    possibilities: HashSet<Tile>,
+}
+
+impl TileState {
+    pub fn is_uncovered(&self) -> bool {
+        self.tile.is_some()
+    }
+}
+
 fn main() {
     let generation = init("resources/beach.bmp");
-    println!("{:#?}", generation);
+    let mut board = vec![vec![TileState::default(); 10]; 10];
+    for h in 0..board.len() {
+        for w in 0..board[0].len() {
+
+        }
+    }
+
 }

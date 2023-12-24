@@ -14,19 +14,10 @@ enum Direction {
 }
 
 impl Direction {
-    pub fn get_image_deltas(&self) -> (i8, i8) {
+    pub fn get_deltas(&self) -> (i8, i8) {
         match self {
             Self::Up => (0, -1), // increasing rows go from top to bottom, so we flip signs for up and down
             Self::Down => (0, 1),
-            Self::Left => (-1, 0),
-            Self::Right => (1, 0),
-        }
-    }
-
-    pub fn get_board_deltas(&self) -> (i8, i8) {
-        match self {
-            Self::Up => (0, 1),
-            Self::Down => (0, -1),
             Self::Left => (-1, 0),
             Self::Right => (1, 0),
         }
@@ -96,14 +87,24 @@ struct Generation {
     pub frequencies: HashMap<TileType, u32>,
 }
 
-fn add_adjacent_rules(ruleset: &mut HashSet<Rule>, image: &dyn BaseImage<u8>, w: u32, h: u32) {
+fn get_all_tile_types() -> HashSet<TileType> {
+    TileType::iter().collect::<HashSet<_>>()
+}
+
+fn add_adjacent_rules(
+    ruleset: &mut HashSet<Rule>,
+    image: &dyn BaseImage<u8>,
+    w: u32,
+    h: u32,
+    rotate_rules: bool,
+) {
     let (width, height) = image.info().wh();
 
     let from_pixel = image.get_pixel(w, h);
     let from = TileType::from_pixel(&[from_pixel[0], from_pixel[1], from_pixel[2]]).unwrap();
 
     for direction in Direction::iter() {
-        let (del_w, del_h) = direction.get_image_deltas();
+        let (del_w, del_h) = direction.get_deltas();
 
         let new_w = del_w + w as i8;
         let new_h = del_h + h as i8;
@@ -114,6 +115,13 @@ fn add_adjacent_rules(ruleset: &mut HashSet<Rule>, image: &dyn BaseImage<u8>, w:
 
             ruleset.insert(Rule::new(from, to, direction));
             ruleset.insert(Rule::reverse(from, to, direction));
+
+            if rotate_rules {
+                for direction in Direction::iter() {
+                    ruleset.insert(Rule::new(from, to, direction));
+                    ruleset.insert(Rule::reverse(from, to, direction));
+                }
+            }
         }
     }
 }
@@ -136,7 +144,7 @@ fn update_frequencies(
     }
 }
 
-fn init(input_path: &str) -> Generation {
+fn generation_init(input_path: &str, rotate_rules: bool) -> Generation {
     let mut ruleset = HashSet::<Rule>::new();
     let mut frequencies = HashMap::<TileType, u32>::new();
 
@@ -145,7 +153,7 @@ fn init(input_path: &str) -> Generation {
     let (width, height) = image.info().wh();
     for h in 0..height {
         for w in 0..width {
-            add_adjacent_rules(&mut ruleset, &image, w, h);
+            add_adjacent_rules(&mut ruleset, &image, w, h, rotate_rules);
             update_frequencies(&mut frequencies, &image, w, h);
         }
     }
@@ -179,7 +187,7 @@ enum Tile {
 impl Default for Tile {
     fn default() -> Self {
         Self::Hidden(PossibileTiles {
-            choices: TileType::iter().collect::<HashSet<_>>(),
+            choices: get_all_tile_types(),
         })
     }
 }
@@ -203,20 +211,20 @@ fn choose_tile(possible_tiles: &PossibileTiles, frequencies: &HashMap<TileType, 
     *tile_choices[index]
 }
 
-fn get_possible_tiles(
+fn remove_choices(
     source_tile: &TileType,
     direction: &Direction,
     ruleset: &HashSet<Rule>,
-) -> HashSet<TileType> {
-    let mut result = HashSet::<TileType>::new();
-
+    original_choices: &mut HashSet<TileType>,
+) {
+    let mut allowed_from_source = HashSet::<TileType>::new();
     for rule in ruleset.iter() {
         if rule.from == *source_tile && rule.direction == *direction {
-            result.insert(rule.to);
+            allowed_from_source.insert(rule.to);
         }
     }
-
-    result
+    let choices_to_remove = &get_all_tile_types() - &allowed_from_source;
+    *original_choices = &(*original_choices) - &choices_to_remove;
 }
 
 fn update_possible_tiles(
@@ -226,14 +234,14 @@ fn update_possible_tiles(
     h: usize,
     direction: &Direction,
 ) {
-    let original_tile = match board[w][h] {
+    let source_tile = match board[h][w] {
         Tile::Revealed(tile) => tile,
         _ => {
             return;
         }
     };
 
-    let (del_w, del_h) = direction.get_image_deltas();
+    let (del_w, del_h) = direction.get_deltas();
 
     let new_w = del_w + w as i8;
     let new_h = del_h + h as i8;
@@ -242,11 +250,15 @@ fn update_possible_tiles(
         Some(row) => match row.get_mut(new_w as usize) {
             Some(cell) => match cell {
                 Tile::Hidden(possible_tiles) => {
-                    possible_tiles.choices =
-                        get_possible_tiles(&original_tile, &direction, &ruleset);
+                    remove_choices(
+                        &source_tile,
+                        &direction,
+                        &ruleset,
+                        &mut possible_tiles.choices,
+                    );
                     println!(
                         "Possible tiles for {:#}, {:#?} are {:#?}",
-                        new_w, new_h, possible_tiles.choices
+                        new_h, new_w, possible_tiles.choices
                     );
                 }
                 Tile::Revealed(_) => {}
@@ -279,8 +291,8 @@ fn reveal(board: &mut Vec<Vec<Tile>>, generation: &Generation, w: usize, h: usiz
 }
 
 fn main() {
-    let generation = init("resources/beach.bmp");
-    let mut board = vec![vec![Tile::default(); 3]; 3];
+    let generation = generation_init("./resources/beach.bmp", true);
+    let mut board = vec![vec![Tile::default(); 10]; 10];
 
     for h in 0..board.len() {
         for w in 0..board[0].len() {
@@ -290,7 +302,7 @@ fn main() {
 
     for h in 0..board.len() {
         for w in 0..board[0].len() {
-            match board[w][h] {
+            match board[h][w] {
                 Tile::Revealed(tile) => match tile {
                     TileType::Invalid => print!("\u{1f7e5}"),
                     TileType::Coast => print!("\u{1f7e8}"),

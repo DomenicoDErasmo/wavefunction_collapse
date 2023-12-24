@@ -137,6 +137,7 @@ fn update_frequencies(
 ) {
     let from_pixel = image.get_pixel(w, h);
     let tile = TileType::from_pixel([from_pixel[0], from_pixel[1], from_pixel[2]]).unwrap();
+
     match frequencies.get_mut(&tile) {
         Some(result) => {
             *result = *result + 1;
@@ -228,17 +229,14 @@ fn remove_choices(
 }
 
 fn update_possible_tiles(
-    board: &mut Vec<Vec<Tile>>,
+    board: &mut [Vec<Tile>],
     ruleset: &HashSet<Rule>,
     w: usize,
     h: usize,
-    direction: &Direction,
+    direction: Direction,
 ) {
-    let source_tile = match board[h][w] {
-        Tile::Revealed(tile) => tile,
-        _ => {
-            return;
-        }
+    let Tile::Revealed(source_tile) = board[h][w] else {
+        return;
     };
 
     let (del_w, del_h) = direction.get_deltas();
@@ -246,42 +244,30 @@ fn update_possible_tiles(
     let new_w = del_w + w as i8;
     let new_h = del_h + h as i8;
 
-    match board.get_mut(new_h as usize) {
-        Some(row) => match row.get_mut(new_w as usize) {
-            Some(cell) => match cell {
+    if let Some(row) = board.get_mut(new_h as usize) {
+        if let Some(cell) = row.get_mut(new_w as usize) {
+            match cell {
                 Tile::Hidden(possible_tiles) => {
-                    remove_choices(
-                        source_tile,
-                        *direction,
-                        &ruleset,
-                        &mut possible_tiles.choices,
-                    );
+                    remove_choices(source_tile, direction, ruleset, &mut possible_tiles.choices);
                 }
                 Tile::Revealed(_) => {}
-            },
-            _ => {}
-        },
-        _ => {}
+            }
+        }
     }
 }
 
-fn reveal(board: &mut Vec<Vec<Tile>>, generation: &Generation, w: usize, h: usize) {
-    match board.get_mut(h) {
-        Some(row) => match row.get_mut(w) {
-            Some(tile) => match tile {
-                Tile::Hidden(possible_tiles) => {
-                    let new_type = choose_tile(possible_tiles, &generation.frequencies);
-                    *tile = Tile::Revealed(new_type);
+fn reveal(board: &mut [Vec<Tile>], generation: &Generation, w: usize, h: usize) {
+    if let Some(row) = board.get_mut(h) {
+        if let Some(tile) = row.get_mut(w) {
+            if let Tile::Hidden(possible_tiles) = tile {
+                let new_type = choose_tile(possible_tiles, &generation.frequencies);
+                *tile = Tile::Revealed(new_type);
 
-                    for direction in Direction::iter() {
-                        update_possible_tiles(board, &generation.ruleset, w, h, &direction);
-                    }
+                for direction in Direction::iter() {
+                    update_possible_tiles(board, &generation.ruleset, w, h, direction);
                 }
-                _ => (),
-            },
-            _ => (),
-        },
-        _ => (),
+            }
+        }
     };
 }
 
@@ -301,14 +287,14 @@ fn main() {
 
     for h in 0..board.len() {
         for w in 0..board[0].len() {
-            match board[h][w] {
-                Tile::Revealed(tile) => match tile {
+            match board[h].get(w) {
+                Some(Tile::Revealed(tile)) => match tile {
                     TileType::Invalid => print!("\u{1f7e5}"),
                     TileType::Coast => print!("\u{1f7e8}"),
                     TileType::Grass => print!("\u{1f7e9}"),
                     TileType::Water => print!("\u{1f7e6}"),
                 },
-                Tile::Hidden(_) => print!("\u{2b1c}"),
+                _ => print!("\u{2b1c}"),
             }
         }
         println!();

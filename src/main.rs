@@ -109,11 +109,18 @@ fn add_adjacent_rules(
     for direction in Direction::iter() {
         let (del_w, del_h) = direction.get_deltas();
 
-        let new_w = del_w + w as i8;
-        let new_h = del_h + h as i8;
+        let new_w = del_w + i8::try_from(w).unwrap();
+        let new_h = del_h + i8::try_from(h).unwrap();
 
-        if (0..width).contains(&(new_w as u32)) && (0..height).contains(&(new_h as u32)) {
-            let to_pixel = image.get_pixel(new_w as u32, new_h as u32);
+        if new_w < 0 || new_h < 0 {
+            continue;
+        }
+
+        let new_w = u32::try_from(new_w).unwrap();
+        let new_h = u32::try_from(new_h).unwrap();
+
+        if (0..width).contains(&new_w) && (0..height).contains(&new_h) {
+            let to_pixel = image.get_pixel(new_w, new_h);
             let to = TileType::from_pixel([to_pixel[0], to_pixel[1], to_pixel[2]]).unwrap();
 
             ruleset.insert(Rule::new(from, to, direction));
@@ -241,11 +248,15 @@ fn update_possible_tiles(
 
     let (del_w, del_h) = direction.get_deltas();
 
-    let new_w = del_w + w as i8;
-    let new_h = del_h + h as i8;
+    let new_w = del_w + i8::try_from(w).unwrap();
+    let new_h = del_h + i8::try_from(h).unwrap();
 
-    if let Some(row) = board.get_mut(new_h as usize) {
-        if let Some(cell) = row.get_mut(new_w as usize) {
+    if new_w < 0 || new_h < 0 {
+        return;
+    }
+
+    if let Some(row) = board.get_mut(usize::try_from(new_h).unwrap()) {
+        if let Some(cell) = row.get_mut(usize::try_from(new_w).unwrap()) {
             match cell {
                 Tile::Hidden(possible_tiles) => {
                     remove_choices(source_tile, direction, ruleset, &mut possible_tiles.choices);

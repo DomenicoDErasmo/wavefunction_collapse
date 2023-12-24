@@ -257,10 +257,6 @@ fn update_possible_tiles(
                         &ruleset,
                         &mut possible_tiles.choices,
                     );
-                    println!(
-                        "Possible tiles for {:#}, {:#?} are {:#?}",
-                        new_h, new_w, possible_tiles.choices
-                    );
                 }
                 Tile::Revealed(_) => {}
             },
@@ -277,7 +273,6 @@ fn reveal(board: &mut Vec<Vec<Tile>>, generation: &Generation, w: usize, h: usiz
                 Tile::Hidden(possible_tiles) => {
                     let new_type = choose_tile(possible_tiles, &generation.frequencies);
                     *tile = Tile::Revealed(new_type);
-                    println!("Picked {:#?} at {:#?}, {:#?}", new_type, w, h);
 
                     for direction in Direction::iter() {
                         update_possible_tiles(board, &generation.ruleset, w, h, &direction);
@@ -297,7 +292,7 @@ fn main() {
     let file_path = format!("./resources/{file_name}");
 
     let generation = generation_init(&file_path, true);
-    let mut board = vec![vec![Tile::default(); 10]; 10];
+    let mut board = vec![vec![Tile::default(); 20]; 20];
 
     for h in 0..board.len() {
         for w in 0..board[0].len() {

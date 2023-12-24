@@ -2,6 +2,7 @@ use imgproc_rs::image::BaseImage;
 use imgproc_rs::io;
 use rand::distributions::{Distribution, Uniform};
 use std::collections::{HashMap, HashSet};
+use std::env;
 use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter};
 
@@ -291,7 +292,11 @@ fn reveal(board: &mut Vec<Vec<Tile>>, generation: &Generation, w: usize, h: usiz
 }
 
 fn main() {
-    let generation = generation_init("./resources/beach.bmp", true);
+    let args: Vec<String> = env::args().collect();
+    let file_name = &args[1];
+    let file_path = format!("./resources/{file_name}");
+
+    let generation = generation_init(&file_path, true);
     let mut board = vec![vec![Tile::default(); 10]; 10];
 
     for h in 0..board.len() {

@@ -1,12 +1,12 @@
 //! Wave function collapse algorithm written in Rust.
 
+use core::hash::BuildHasher;
 use imgproc_rs::image::BaseImage;
 use imgproc_rs::io;
 use rand::distributions::{Distribution, Uniform};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::env;
-use std::hash::BuildHasher;
 use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter};
 
@@ -69,11 +69,11 @@ impl TileType {
     }
 }
 
-impl<'a, S> FromIterator<&'a TileType> for HashSet<TileType, S>
+impl<'src, S> FromIterator<&'src TileType> for HashSet<TileType, S>
 where
     S: BuildHasher + Default,
 {
-    fn from_iter<T: IntoIterator<Item = &'a TileType>>(iter: T) -> Self {
+    fn from_iter<T: IntoIterator<Item = &'src TileType>>(iter: T) -> Self {
         iter.into_iter().copied().collect()
     }
 }
@@ -127,19 +127,19 @@ fn add_adjacent_rules(
     for direction in Direction::iter() {
         let (del_w, del_h) = direction.get_deltas();
 
-        let new_w = del_w
+        let raw_new_w = del_w
             .checked_add(i8::try_from(width).unwrap())
             .unwrap_or(i8::MAX);
-        let new_h = del_h
+        let raw_new_h = del_h
             .checked_add(i8::try_from(height).unwrap())
             .unwrap_or(i8::MAX);
 
-        if new_w < 0 || new_h < 0 {
+        if raw_new_w < 0 || raw_new_h < 0 {
             continue;
         }
 
-        let new_w = u32::try_from(new_w).unwrap();
-        let new_h = u32::try_from(new_h).unwrap();
+        let new_w = u32::try_from(raw_new_w).unwrap();
+        let new_h = u32::try_from(raw_new_h).unwrap();
 
         if (0..max_width).contains(&new_w) && (0..max_height).contains(&new_h) {
             let to = TileType::from_pixel(image, new_w, new_h).unwrap();
@@ -148,9 +148,9 @@ fn add_adjacent_rules(
             ruleset.insert(Rule::reverse(from, to, direction));
 
             if rotate_rules {
-                for direction in Direction::iter() {
-                    ruleset.insert(Rule::new(from, to, direction));
-                    ruleset.insert(Rule::reverse(from, to, direction));
+                for rotate_direction in Direction::iter() {
+                    ruleset.insert(Rule::new(from, to, rotate_direction));
+                    ruleset.insert(Rule::reverse(from, to, rotate_direction));
                 }
             }
         }

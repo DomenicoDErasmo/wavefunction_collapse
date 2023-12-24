@@ -312,6 +312,6 @@ fn main() {
                 Tile::Hidden(_) => print!("\u{2b1c}"),
             }
         }
-        println!("");
+        println!();
     }
 }

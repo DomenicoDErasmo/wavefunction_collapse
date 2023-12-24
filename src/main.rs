@@ -1,3 +1,5 @@
+//! Wave function collapse algorithm written in Rust.
+
 use imgproc_rs::image::BaseImage;
 use imgproc_rs::io;
 use rand::distributions::{Distribution, Uniform};
@@ -15,7 +17,7 @@ enum Direction {
 }
 
 impl Direction {
-    pub fn get_deltas(&self) -> (i8, i8) {
+    pub const fn get_deltas(self) -> (i8, i8) {
         match self {
             Self::Up => (0, -1), // increasing rows go from top to bottom, so we flip signs for up and down
             Self::Down => (0, 1),
@@ -24,7 +26,7 @@ impl Direction {
         }
     }
 
-    pub fn get_opposite(&self) -> Self {
+    pub const fn get_opposite(self) -> Self {
         match self {
             Self::Up => Self::Down,
             Self::Down => Self::Up,
@@ -47,8 +49,8 @@ enum TileType {
 }
 
 impl TileType {
-    pub fn from_pixel(pixel: &[u8; 3]) -> Option<Self> {
-        match *pixel {
+    pub const fn from_pixel(pixel: [u8; 3]) -> Option<Self> {
+        match pixel {
             WATER => Some(Self::Water),
             COAST => Some(Self::Coast),
             GRASS => Some(Self::Grass),
@@ -65,7 +67,7 @@ struct Rule {
 }
 
 impl Rule {
-    pub fn new(from: TileType, to: TileType, direction: Direction) -> Self {
+    pub const fn new(from: TileType, to: TileType, direction: Direction) -> Self {
         Self {
             from,
             to,
@@ -73,7 +75,7 @@ impl Rule {
         }
     }
 
-    pub fn reverse(from: TileType, to: TileType, direction: Direction) -> Self {
+    pub const fn reverse(from: TileType, to: TileType, direction: Direction) -> Self {
         Self {
             from: to,
             to: from,
@@ -102,7 +104,7 @@ fn add_adjacent_rules(
     let (width, height) = image.info().wh();
 
     let from_pixel = image.get_pixel(w, h);
-    let from = TileType::from_pixel(&[from_pixel[0], from_pixel[1], from_pixel[2]]).unwrap();
+    let from = TileType::from_pixel([from_pixel[0], from_pixel[1], from_pixel[2]]).unwrap();
 
     for direction in Direction::iter() {
         let (del_w, del_h) = direction.get_deltas();
@@ -112,7 +114,7 @@ fn add_adjacent_rules(
 
         if (0..width).contains(&(new_w as u32)) && (0..height).contains(&(new_h as u32)) {
             let to_pixel = image.get_pixel(new_w as u32, new_h as u32);
-            let to = TileType::from_pixel(&[to_pixel[0], to_pixel[1], to_pixel[2]]).unwrap();
+            let to = TileType::from_pixel([to_pixel[0], to_pixel[1], to_pixel[2]]).unwrap();
 
             ruleset.insert(Rule::new(from, to, direction));
             ruleset.insert(Rule::reverse(from, to, direction));
@@ -134,7 +136,7 @@ fn update_frequencies(
     h: u32,
 ) {
     let from_pixel = image.get_pixel(w, h);
-    let tile = TileType::from_pixel(&[from_pixel[0], from_pixel[1], from_pixel[2]]).unwrap();
+    let tile = TileType::from_pixel([from_pixel[0], from_pixel[1], from_pixel[2]]).unwrap();
     match frequencies.get_mut(&tile) {
         Some(result) => {
             *result = *result + 1;
@@ -160,12 +162,9 @@ fn generation_init(input_path: &str, rotate_rules: bool) -> Generation {
     }
 
     for tile_type in TileType::iter() {
-        match frequencies.get(&tile_type) {
-            None => {
-                frequencies.insert(tile_type, 0);
-            }
-            _ => {}
-        };
+        if frequencies.get(&tile_type).is_none() {
+            frequencies.insert(tile_type, 0);
+        }
     }
 
     Generation {
@@ -199,7 +198,7 @@ fn choose_tile(possible_tiles: &PossibileTiles, frequencies: &HashMap<TileType, 
     }
 
     let mut tile_choices = vec![];
-    for tile in possible_tiles.choices.iter() {
+    for tile in &possible_tiles.choices {
         let frequency = frequencies.get(tile).unwrap();
         for _ in 0..(*frequency) {
             tile_choices.push(tile);
@@ -213,14 +212,14 @@ fn choose_tile(possible_tiles: &PossibileTiles, frequencies: &HashMap<TileType, 
 }
 
 fn remove_choices(
-    source_tile: &TileType,
-    direction: &Direction,
+    source_tile: TileType,
+    direction: Direction,
     ruleset: &HashSet<Rule>,
     original_choices: &mut HashSet<TileType>,
 ) {
     let mut allowed_from_source = HashSet::<TileType>::new();
-    for rule in ruleset.iter() {
-        if rule.from == *source_tile && rule.direction == *direction {
+    for rule in ruleset {
+        if rule.from == source_tile && rule.direction == direction {
             allowed_from_source.insert(rule.to);
         }
     }
@@ -252,8 +251,8 @@ fn update_possible_tiles(
             Some(cell) => match cell {
                 Tile::Hidden(possible_tiles) => {
                     remove_choices(
-                        &source_tile,
-                        &direction,
+                        source_tile,
+                        *direction,
                         &ruleset,
                         &mut possible_tiles.choices,
                     );

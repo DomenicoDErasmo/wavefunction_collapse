@@ -1,0 +1,1 @@
+Wave function collapse algorithm written in Rust.

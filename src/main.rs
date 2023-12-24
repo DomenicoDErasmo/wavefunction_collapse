@@ -3,6 +3,7 @@
 use imgproc_rs::image::BaseImage;
 use imgproc_rs::io;
 use rand::distributions::{Distribution, Uniform};
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::env;
 use strum::IntoEnumIterator;
@@ -145,13 +146,10 @@ fn update_frequencies(
     let from_pixel = image.get_pixel(w, h);
     let tile = TileType::from_pixel([from_pixel[0], from_pixel[1], from_pixel[2]]).unwrap();
 
-    match frequencies.get_mut(&tile) {
-        Some(result) => {
-            *result = *result + 1;
-        }
-        None => {
-            frequencies.insert(tile, 1);
-        }
+    if let Entry::Vacant(e) = frequencies.entry(tile) {
+        e.insert(1);
+    } else {
+        *frequencies.get_mut(&tile).unwrap() += 1;
     }
 }
 

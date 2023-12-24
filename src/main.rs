@@ -51,8 +51,16 @@ enum TileType {
 }
 
 impl TileType {
-    pub const fn from_pixel(pixel: [u8; 3]) -> Option<Self> {
-        match pixel {
+    pub fn from_pixel(image: &dyn BaseImage<u8>, width: u32, height: u32) -> Option<Self> {
+        let raw_pixel = image.get_pixel(width, height);
+        let (Some(first), Some(second), Some(third)) =
+            (raw_pixel.first(), raw_pixel.get(1), raw_pixel.get(2))
+        else {
+            println!("Pixel does not have three values.");
+            return None;
+        };
+
+        match [*first, *second, *third] {
             WATER => Some(Self::Water),
             COAST => Some(Self::Coast),
             GRASS => Some(Self::Grass),
@@ -108,23 +116,22 @@ fn get_all_tile_types() -> HashSet<TileType> {
 fn add_adjacent_rules(
     ruleset: &mut HashSet<Rule>,
     image: &dyn BaseImage<u8>,
-    w: u32,
-    h: u32,
+    width: u32,
+    height: u32,
     rotate_rules: bool,
 ) {
-    let (width, height) = image.info().wh();
+    let (max_width, max_height) = image.info().wh();
 
-    let from_pixel = image.get_pixel(w, h);
-    let from = TileType::from_pixel([from_pixel[0], from_pixel[1], from_pixel[2]]).unwrap();
+    let from = TileType::from_pixel(image, width, height).unwrap();
 
     for direction in Direction::iter() {
         let (del_w, del_h) = direction.get_deltas();
 
         let new_w = del_w
-            .checked_add(i8::try_from(w).unwrap())
+            .checked_add(i8::try_from(width).unwrap())
             .unwrap_or(i8::MAX);
         let new_h = del_h
-            .checked_add(i8::try_from(h).unwrap())
+            .checked_add(i8::try_from(height).unwrap())
             .unwrap_or(i8::MAX);
 
         if new_w < 0 || new_h < 0 {
@@ -134,9 +141,8 @@ fn add_adjacent_rules(
         let new_w = u32::try_from(new_w).unwrap();
         let new_h = u32::try_from(new_h).unwrap();
 
-        if (0..width).contains(&new_w) && (0..height).contains(&new_h) {
-            let to_pixel = image.get_pixel(new_w, new_h);
-            let to = TileType::from_pixel([to_pixel[0], to_pixel[1], to_pixel[2]]).unwrap();
+        if (0..max_width).contains(&new_w) && (0..max_height).contains(&new_h) {
+            let to = TileType::from_pixel(image, new_w, new_h).unwrap();
 
             ruleset.insert(Rule::new(from, to, direction));
             ruleset.insert(Rule::reverse(from, to, direction));
@@ -154,14 +160,13 @@ fn add_adjacent_rules(
 fn update_frequencies(
     frequencies: &mut HashMap<TileType, u32>,
     image: &dyn BaseImage<u8>,
-    w: u32,
-    h: u32,
+    width: u32,
+    height: u32,
 ) {
-    let from_pixel = image.get_pixel(w, h);
-    let tile = TileType::from_pixel([from_pixel[0], from_pixel[1], from_pixel[2]]).unwrap();
+    let tile = TileType::from_pixel(image, width, height).unwrap();
 
-    if let Entry::Vacant(e) = frequencies.entry(tile) {
-        e.insert(1);
+    if let Entry::Vacant(entry) = frequencies.entry(tile) {
+        entry.insert(1);
     } else {
         *frequencies.get_mut(&tile).unwrap() = frequencies
             .get_mut(&tile)
@@ -177,11 +182,11 @@ fn generation_init(input_path: &str, rotate_rules: bool) -> Generation {
 
     let image = io::read(input_path).unwrap();
 
-    let (width, height) = image.info().wh();
-    for h in 0..height {
-        for w in 0..width {
-            add_adjacent_rules(&mut ruleset, &image, w, h, rotate_rules);
-            update_frequencies(&mut frequencies, &image, w, h);
+    let (max_width, max_height) = image.info().wh();
+    for height in 0..max_height {
+        for width in 0..max_width {
+            add_adjacent_rules(&mut ruleset, &image, width, height, rotate_rules);
+            update_frequencies(&mut frequencies, &image, width, height);
         }
     }
 
@@ -223,7 +228,7 @@ fn choose_tile(possible_tiles: &PossibileTiles, frequencies: &HashMap<TileType, 
 
     let mut tile_choices = vec![];
     for tile in &possible_tiles.choices {
-        let frequency = frequencies.get(tile).unwrap();
+        let frequency = frequencies.get(tile).unwrap_or(&0);
         for _ in 0..(*frequency) {
             tile_choices.push(tile);
         }
@@ -232,7 +237,7 @@ fn choose_tile(possible_tiles: &PossibileTiles, frequencies: &HashMap<TileType, 
     let distribution = Uniform::from(0..tile_choices.len());
     let index = distribution.sample(&mut rng);
 
-    *tile_choices[index]
+    **tile_choices.get(index).unwrap_or(&&TileType::Invalid)
 }
 
 fn remove_choices(
@@ -260,21 +265,27 @@ fn remove_choices(
 fn update_possible_tiles(
     board: &mut [Vec<Tile>],
     ruleset: &HashSet<Rule>,
-    w: usize,
-    h: usize,
+    width: usize,
+    height: usize,
     direction: Direction,
 ) {
-    let Tile::Revealed(source_tile) = board[h][w] else {
+    let source_tile = if let Some(row) = board.get(height) {
+        if let Some(&Tile::Revealed(tile)) = row.get(width) {
+            tile
+        } else {
+            return;
+        }
+    } else {
         return;
     };
 
     let (del_w, del_h) = direction.get_deltas();
 
     let new_w = del_w
-        .checked_add(i8::try_from(w).unwrap())
+        .checked_add(i8::try_from(width).unwrap())
         .unwrap_or(i8::MAX);
     let new_h = del_h
-        .checked_add(i8::try_from(h).unwrap())
+        .checked_add(i8::try_from(height).unwrap())
         .unwrap_or(i8::MAX);
 
     if new_w < 0 || new_h < 0 {
@@ -293,15 +304,15 @@ fn update_possible_tiles(
     }
 }
 
-fn reveal(board: &mut [Vec<Tile>], generation: &Generation, w: usize, h: usize) {
-    if let Some(row) = board.get_mut(h) {
-        if let Some(tile) = row.get_mut(w) {
+fn reveal(board: &mut [Vec<Tile>], generation: &Generation, width: usize, height: usize) {
+    if let Some(row) = board.get_mut(height) {
+        if let Some(tile) = row.get_mut(width) {
             if let Tile::Hidden(possible_tiles) = tile {
                 let new_type = choose_tile(possible_tiles, &generation.frequencies);
                 *tile = Tile::Revealed(new_type);
 
                 for direction in Direction::iter() {
-                    update_possible_tiles(board, &generation.ruleset, w, h, direction);
+                    update_possible_tiles(board, &generation.ruleset, width, height, direction);
                 }
             }
         }
@@ -310,28 +321,38 @@ fn reveal(board: &mut [Vec<Tile>], generation: &Generation, w: usize, h: usize) 
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let file_name = &args[1];
+    let Some(file_name) = args.get(1) else {
+        println!("Must pass an argument specifying the file to use. Exiting.");
+        return;
+    };
     let file_path = format!("./resources/{file_name}");
 
     let generation = generation_init(&file_path, true);
     let mut board = vec![vec![Tile::default(); 20]; 20];
 
-    for h in 0..board.len() {
-        for w in 0..board[0].len() {
-            reveal(&mut board, &generation, w, h);
+    let max_height = board.len();
+    let empty_row = &vec![];
+    let first_row = board.get(0).unwrap_or(empty_row);
+    let max_width = first_row.len();
+
+    for height in 0..max_height {
+        for width in 0..max_width {
+            reveal(&mut board, &generation, width, height);
         }
     }
 
-    for h in 0..board.len() {
-        for w in 0..board[0].len() {
-            match board[h].get(w) {
-                Some(Tile::Revealed(tile)) => match tile {
-                    TileType::Invalid => print!("\u{1f7e5}"),
-                    TileType::Coast => print!("\u{1f7e8}"),
-                    TileType::Grass => print!("\u{1f7e9}"),
-                    TileType::Water => print!("\u{1f7e6}"),
-                },
-                _ => print!("\u{2b1c}"),
+    for height in 0..max_height {
+        for width in 0..max_width {
+            if let Some(row) = board.get(height) {
+                match row.get(width) {
+                    Some(&Tile::Revealed(tile)) => match tile {
+                        TileType::Invalid => print!("\u{1f7e5}"),
+                        TileType::Coast => print!("\u{1f7e8}"),
+                        TileType::Grass => print!("\u{1f7e9}"),
+                        TileType::Water => print!("\u{1f7e6}"),
+                    },
+                    _ => print!("\u{2b1c}"),
+                }
             }
         }
         println!();

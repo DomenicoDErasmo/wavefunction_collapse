@@ -6,6 +6,7 @@ use rand::distributions::{Distribution, Uniform};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::env;
+use std::hash::BuildHasher;
 use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter};
 
@@ -60,6 +61,15 @@ impl TileType {
     }
 }
 
+impl<'a, S> FromIterator<&'a TileType> for HashSet<TileType, S>
+where
+    S: BuildHasher + Default,
+{
+    fn from_iter<T: IntoIterator<Item = &'a TileType>>(iter: T) -> Self {
+        iter.into_iter().copied().collect()
+    }
+}
+
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 struct Rule {
     pub from: TileType,
@@ -110,8 +120,12 @@ fn add_adjacent_rules(
     for direction in Direction::iter() {
         let (del_w, del_h) = direction.get_deltas();
 
-        let new_w = del_w + i8::try_from(w).unwrap();
-        let new_h = del_h + i8::try_from(h).unwrap();
+        let new_w = del_w
+            .checked_add(i8::try_from(w).unwrap())
+            .unwrap_or(i8::MAX);
+        let new_h = del_h
+            .checked_add(i8::try_from(h).unwrap())
+            .unwrap_or(i8::MAX);
 
         if new_w < 0 || new_h < 0 {
             continue;
@@ -149,7 +163,11 @@ fn update_frequencies(
     if let Entry::Vacant(e) = frequencies.entry(tile) {
         e.insert(1);
     } else {
-        *frequencies.get_mut(&tile).unwrap() += 1;
+        *frequencies.get_mut(&tile).unwrap() = frequencies
+            .get_mut(&tile)
+            .unwrap()
+            .checked_add(1)
+            .unwrap_or(u32::MAX);
     }
 }
 
@@ -229,8 +247,14 @@ fn remove_choices(
             allowed_from_source.insert(rule.to);
         }
     }
-    let choices_to_remove = &get_all_tile_types() - &allowed_from_source;
-    *original_choices = &(*original_choices) - &choices_to_remove;
+
+    let all_tile_types = get_all_tile_types();
+    let choices_to_remove = all_tile_types.difference(&allowed_from_source);
+    let collected_difference = choices_to_remove.collect::<HashSet<_>>();
+    let new_choices = original_choices
+        .difference(&collected_difference)
+        .collect::<HashSet<_>>();
+    *original_choices = new_choices;
 }
 
 fn update_possible_tiles(
@@ -246,8 +270,12 @@ fn update_possible_tiles(
 
     let (del_w, del_h) = direction.get_deltas();
 
-    let new_w = del_w + i8::try_from(w).unwrap();
-    let new_h = del_h + i8::try_from(h).unwrap();
+    let new_w = del_w
+        .checked_add(i8::try_from(w).unwrap())
+        .unwrap_or(i8::MAX);
+    let new_h = del_h
+        .checked_add(i8::try_from(h).unwrap())
+        .unwrap_or(i8::MAX);
 
     if new_w < 0 || new_h < 0 {
         return;

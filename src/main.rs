@@ -1,5 +1,9 @@
 //! Wave function collapse algorithm written in Rust.
 
+#![allow(clippy::missing_docs_in_private_items)]
+#![allow(clippy::pattern_type_mismatch)]
+#![allow(clippy::single_call_fn)]
+
 use core::hash::BuildHasher;
 use imgproc_rs::image::BaseImage;
 use imgproc_rs::io;

@@ -10,6 +10,24 @@ use std::env;
 use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter};
 
+macro_rules! unwrap_result_or_return {
+    ( $e:expr ) => {
+        match $e {
+            Ok(x) => x,
+            Err(_) => return,
+        }
+    };
+}
+
+macro_rules! unwrap_option_or_return {
+    ( $e:expr ) => {
+        match $e {
+            Some(x) => x,
+            None => return,
+        }
+    };
+}
+
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, EnumIter)]
 enum Direction {
     Up,
@@ -122,27 +140,27 @@ fn add_adjacent_rules(
 ) {
     let (max_width, max_height) = image.info().wh();
 
-    let from = TileType::from_pixel(image, width, height).unwrap();
+    let from = unwrap_option_or_return!(TileType::from_pixel(image, width, height));
 
     for direction in Direction::iter() {
         let (del_w, del_h) = direction.get_deltas();
 
         let raw_new_w = del_w
-            .checked_add(i8::try_from(width).unwrap())
+            .checked_add(unwrap_result_or_return!(i8::try_from(width)))
             .unwrap_or(i8::MAX);
         let raw_new_h = del_h
-            .checked_add(i8::try_from(height).unwrap())
+            .checked_add(unwrap_result_or_return!(i8::try_from(height)))
             .unwrap_or(i8::MAX);
 
         if raw_new_w < 0 || raw_new_h < 0 {
             continue;
         }
 
-        let new_w = u32::try_from(raw_new_w).unwrap();
-        let new_h = u32::try_from(raw_new_h).unwrap();
+        let new_w = unwrap_result_or_return!(u32::try_from(raw_new_w));
+        let new_h = unwrap_result_or_return!(u32::try_from(raw_new_h));
 
         if (0..max_width).contains(&new_w) && (0..max_height).contains(&new_h) {
-            let to = TileType::from_pixel(image, new_w, new_h).unwrap();
+            let to = unwrap_option_or_return!(TileType::from_pixel(image, new_w, new_h));
 
             ruleset.insert(Rule::new(from, to, direction));
             ruleset.insert(Rule::reverse(from, to, direction));
@@ -163,24 +181,25 @@ fn update_frequencies(
     width: u32,
     height: u32,
 ) {
-    let tile = TileType::from_pixel(image, width, height).unwrap();
+    let tile = unwrap_option_or_return!(TileType::from_pixel(image, width, height));
 
     if let Entry::Vacant(entry) = frequencies.entry(tile) {
         entry.insert(1);
     } else {
-        *frequencies.get_mut(&tile).unwrap() = frequencies
-            .get_mut(&tile)
-            .unwrap()
-            .checked_add(1)
-            .unwrap_or(u32::MAX);
+        *unwrap_option_or_return!(frequencies.get_mut(&tile)) =
+            unwrap_option_or_return!(frequencies.get_mut(&tile))
+                .checked_add(1)
+                .unwrap_or(u32::MAX);
     }
 }
 
-fn generation_init(input_path: &str, rotate_rules: bool) -> Generation {
+fn generation_init(input_path: &str, rotate_rules: bool) -> Option<Generation> {
     let mut ruleset = HashSet::<Rule>::new();
     let mut frequencies = HashMap::<TileType, u32>::new();
 
-    let image = io::read(input_path).unwrap();
+    let Ok(image) = io::read(input_path) else {
+        return None;
+    };
 
     let (max_width, max_height) = image.info().wh();
     for height in 0..max_height {
@@ -196,10 +215,10 @@ fn generation_init(input_path: &str, rotate_rules: bool) -> Generation {
         }
     }
 
-    Generation {
+    Some(Generation {
         ruleset,
         frequencies,
-    }
+    })
 }
 
 #[derive(Clone, Debug)]
@@ -282,18 +301,18 @@ fn update_possible_tiles(
     let (del_w, del_h) = direction.get_deltas();
 
     let new_w = del_w
-        .checked_add(i8::try_from(width).unwrap())
+        .checked_add(unwrap_result_or_return!(i8::try_from(width)))
         .unwrap_or(i8::MAX);
     let new_h = del_h
-        .checked_add(i8::try_from(height).unwrap())
+        .checked_add(unwrap_result_or_return!(i8::try_from(height)))
         .unwrap_or(i8::MAX);
 
     if new_w < 0 || new_h < 0 {
         return;
     }
 
-    if let Some(row) = board.get_mut(usize::try_from(new_h).unwrap()) {
-        if let Some(cell) = row.get_mut(usize::try_from(new_w).unwrap()) {
+    if let Some(row) = board.get_mut(unwrap_result_or_return!(usize::try_from(new_h))) {
+        if let Some(cell) = row.get_mut(unwrap_result_or_return!(usize::try_from(new_w))) {
             match cell {
                 Tile::Hidden(possible_tiles) => {
                     remove_choices(source_tile, direction, ruleset, &mut possible_tiles.choices);
@@ -304,7 +323,10 @@ fn update_possible_tiles(
     }
 }
 
-fn reveal(board: &mut [Vec<Tile>], generation: &Generation, width: usize, height: usize) {
+fn reveal(board: &mut [Vec<Tile>], gen_params: &Option<Generation>, width: usize, height: usize) {
+    let Some(generation) = gen_params else {
+        return;
+    };
     if let Some(row) = board.get_mut(height) {
         if let Some(tile) = row.get_mut(width) {
             if let Tile::Hidden(possible_tiles) = tile {

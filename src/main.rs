@@ -12,7 +12,7 @@ use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::env;
 use strum::IntoEnumIterator;
-use strum_macros::{Display, EnumIter};
+use strum_macros::EnumIter;
 
 macro_rules! unwrap_result_or_return {
     ( $e:expr ) => {
@@ -60,17 +60,17 @@ impl Direction {
     }
 }
 
-const WATER: [u8; 3] = [63, 72, 204];
-const COAST: [u8; 3] = [255, 201, 14];
-const GRASS: [u8; 3] = [34, 177, 76];
-
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, EnumIter, Display)]
-enum TileType {
-    Invalid,
-    Coast,
-    Grass,
-    Water,
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+struct TileType {
+    pub rgb: [u8; 3],
 }
+
+const INVALID_TILE: TileType = TileType { rgb: [255, 0, 0] };
+const WATER_TILE: TileType = TileType { rgb: [63, 72, 204] };
+const COAST_TILE: TileType = TileType {
+    rgb: [255, 201, 14],
+};
+const GRASS_TILE: TileType = TileType { rgb: [34, 177, 76] };
 
 impl TileType {
     pub fn from_pixel(image: &dyn BaseImage<u8>, width: u32, height: u32) -> Option<Self> {
@@ -82,12 +82,9 @@ impl TileType {
             return None;
         };
 
-        match [*first, *second, *third] {
-            WATER => Some(Self::Water),
-            COAST => Some(Self::Coast),
-            GRASS => Some(Self::Grass),
-            _ => None,
-        }
+        Some(Self {
+            rgb: [*first, *second, *third],
+        })
     }
 }
 
@@ -131,8 +128,15 @@ struct Generation {
     pub frequencies: HashMap<TileType, u32>,
 }
 
-fn get_all_tile_types() -> HashSet<TileType> {
-    TileType::iter().collect::<HashSet<_>>()
+fn get_all_tile_types(ruleset: &HashSet<Rule>) -> HashSet<TileType> {
+    let mut result = HashSet::<TileType>::new();
+
+    for rule in ruleset {
+        result.insert(rule.from);
+        result.insert(rule.to);
+    }
+
+    result
 }
 
 fn add_adjacent_rules(
@@ -213,7 +217,7 @@ fn generation_init(input_path: &str, rotate_rules: bool) -> Option<Generation> {
         }
     }
 
-    for tile_type in TileType::iter() {
+    for tile_type in get_all_tile_types(&ruleset) {
         if frequencies.get(&tile_type).is_none() {
             frequencies.insert(tile_type, 0);
         }
@@ -236,17 +240,9 @@ enum Tile {
     Hidden(PossibileTiles),
 }
 
-impl Default for Tile {
-    fn default() -> Self {
-        Self::Hidden(PossibileTiles {
-            choices: get_all_tile_types(),
-        })
-    }
-}
-
 fn choose_tile(possible_tiles: &PossibileTiles, frequencies: &HashMap<TileType, u32>) -> TileType {
     if possible_tiles.choices.is_empty() {
-        return TileType::Invalid;
+        return INVALID_TILE;
     }
 
     let mut tile_choices = vec![];
@@ -260,7 +256,7 @@ fn choose_tile(possible_tiles: &PossibileTiles, frequencies: &HashMap<TileType, 
     let distribution = Uniform::from(0..tile_choices.len());
     let index = distribution.sample(&mut rng);
 
-    **tile_choices.get(index).unwrap_or(&&TileType::Invalid)
+    **tile_choices.get(index).unwrap_or(&&INVALID_TILE)
 }
 
 fn remove_choices(
@@ -276,7 +272,7 @@ fn remove_choices(
         }
     }
 
-    let all_tile_types = get_all_tile_types();
+    let all_tile_types = get_all_tile_types(ruleset);
     let choices_to_remove = all_tile_types.difference(&allowed_from_source);
     let collected_difference = choices_to_remove.collect::<HashSet<_>>();
     let new_choices = original_choices
@@ -327,10 +323,7 @@ fn update_possible_tiles(
     }
 }
 
-fn reveal(board: &mut [Vec<Tile>], gen_params: &Option<Generation>, width: usize, height: usize) {
-    let Some(generation) = gen_params else {
-        return;
-    };
+fn reveal(board: &mut [Vec<Tile>], generation: &Generation, width: usize, height: usize) {
     if let Some(row) = board.get_mut(height) {
         if let Some(tile) = row.get_mut(width) {
             if let Tile::Hidden(possible_tiles) = tile {
@@ -353,8 +346,20 @@ fn main() {
     };
     let file_path = format!("./resources/{file_name}");
 
-    let generation = generation_init(&file_path, true);
-    let mut board = vec![vec![Tile::default(); 20]; 20];
+    let Some(generation) = generation_init(&file_path, true) else {
+        println!("Failed to create generation rules based on the provided file. Exiting.",);
+        return;
+    };
+
+    let mut board = vec![
+        vec![
+            Tile::Hidden(PossibileTiles {
+                choices: get_all_tile_types(&generation.ruleset)
+            });
+            20
+        ];
+        20
+    ];
 
     let max_height = board.len();
     let empty_row = &vec![];
@@ -372,10 +377,10 @@ fn main() {
             if let Some(row) = board.get(height) {
                 match row.get(width) {
                     Some(&Tile::Revealed(tile)) => match tile {
-                        TileType::Invalid => print!("\u{1f7e5}"),
-                        TileType::Coast => print!("\u{1f7e8}"),
-                        TileType::Grass => print!("\u{1f7e9}"),
-                        TileType::Water => print!("\u{1f7e6}"),
+                        COAST_TILE => print!("\u{1f7e8}"),
+                        GRASS_TILE => print!("\u{1f7e9}"),
+                        WATER_TILE => print!("\u{1f7e6}"),
+                        _ => print!("\u{1f7e5}"),
                     },
                     _ => print!("\u{2b1c}"),
                 }
